@@ -527,6 +527,156 @@ async function deleteMenuItem(id) {
   selectRestaurant(currentRestaurantId, document.getElementById('menu-title').textContent.replace('📋 ', '').replace(' 菜單', ''));
 }
 
+// ===== Menu Image Upload =====
+
+let pendingMenuItems = [];
+
+const uploadArea = document.getElementById('upload-area');
+const menuImageInput = document.getElementById('menu-image');
+const uploadStatus = document.getElementById('upload-status');
+const uploadPreview = document.getElementById('upload-preview');
+const previewItems = document.getElementById('preview-items');
+
+uploadArea.addEventListener('click', () => {
+  menuImageInput.click();
+});
+
+uploadArea.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  uploadArea.classList.add('dragging');
+});
+
+uploadArea.addEventListener('dragleave', () => {
+  uploadArea.classList.remove('dragging');
+});
+
+uploadArea.addEventListener('drop', (e) => {
+  e.preventDefault();
+  uploadArea.classList.remove('dragging');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) {
+    analyzeMenuImage(file);
+  }
+});
+
+menuImageInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    analyzeMenuImage(file);
+  }
+});
+
+async function analyzeMenuImage(file) {
+  uploadArea.classList.add('hidden');
+  uploadStatus.classList.remove('hidden');
+  uploadStatus.classList.add('loading');
+  uploadStatus.classList.remove('error');
+  uploadStatus.innerHTML = '🔍 AI 正在分析菜單...';
+  uploadPreview.classList.add('hidden');
+
+  const formData = new FormData();
+  formData.append('image', file);
+
+  try {
+    const res = await fetch(`${API}/api/analyze-menu`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await res.json();
+
+    if (data.error) {
+      throw new Error(data.error + (data.hint ? `\n${data.hint}` : ''));
+    }
+
+    if (!data.items || data.items.length === 0) {
+      throw new Error('沒有識別到餐點項目');
+    }
+
+    // Show preview
+    pendingMenuItems = data.items;
+    renderPreviewItems();
+    uploadStatus.classList.add('hidden');
+    uploadPreview.classList.remove('hidden');
+
+  } catch (err) {
+    uploadStatus.classList.remove('loading');
+    uploadStatus.classList.add('error');
+    uploadStatus.innerHTML = `❌ ${err.message}<br><button class="btn" onclick="resetUpload()">重試</button>`;
+  }
+}
+
+function renderPreviewItems() {
+  previewItems.innerHTML = pendingMenuItems.map((item, index) => `
+    <div class="preview-item">
+      <span class="name">${item.name}</span>
+      <span class="price">${item.price ? `$${item.price}` : '-'}</span>
+      <button class="remove-btn" onclick="removePreviewItem(${index})">×</button>
+    </div>
+  `).join('');
+}
+
+function removePreviewItem(index) {
+  pendingMenuItems.splice(index, 1);
+  if (pendingMenuItems.length === 0) {
+    resetUpload();
+  } else {
+    renderPreviewItems();
+  }
+}
+
+function resetUpload() {
+  uploadArea.classList.remove('hidden');
+  uploadStatus.classList.add('hidden');
+  uploadPreview.classList.add('hidden');
+  menuImageInput.value = '';
+  pendingMenuItems = [];
+}
+
+document.getElementById('cancel-upload').addEventListener('click', resetUpload);
+
+document.getElementById('confirm-upload').addEventListener('click', async () => {
+  if (pendingMenuItems.length === 0) return;
+
+  try {
+    const res = await fetch(`${API}/api/restaurants/${currentRestaurantId}/menu/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: pendingMenuItems })
+    });
+
+    const data = await res.json();
+    alert(`成功新增 ${data.added} 個餐點！`);
+    resetUpload();
+    selectRestaurant(currentRestaurantId, document.getElementById('menu-title').textContent.replace('📋 ', '').replace(' 菜單', ''));
+    loadDataLists();
+
+  } catch (err) {
+    alert('新增失敗: ' + err.message);
+  }
+});
+
+// Check if OpenAI is configured
+async function checkConfig() {
+  try {
+    const res = await fetch(`${API}/api/config`);
+    const config = await res.json();
+    if (!config.hasOpenAI) {
+      const uploadContent = document.querySelector('.upload-content');
+      if (uploadContent) {
+        uploadContent.innerHTML = `
+          <span class="upload-icon">📷</span>
+          <span>上傳菜單照片自動辨識</span>
+          <small style="color:var(--warning)">⚠️ 需設定 OpenAI API Key</small>
+        `;
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
 // Initial load
 loadMeals();
 loadDataLists();
+checkConfig();

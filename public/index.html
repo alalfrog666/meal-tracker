@@ -104,13 +104,33 @@
       
       <div id="menu-section" class="hidden">
         <h3 id="menu-title">📋 菜單</h3>
+        
+        <!-- 圖片上傳區 -->
+        <div class="card upload-card">
+          <div class="upload-area" id="upload-area">
+            <input type="file" id="menu-image" accept="image/*" hidden>
+            <div class="upload-content">
+              <span class="upload-icon">📷</span>
+              <span>上傳菜單照片自動辨識</span>
+            </div>
+          </div>
+          <div id="upload-status" class="hidden"></div>
+          <div id="upload-preview" class="hidden">
+            <div id="preview-items"></div>
+            <div class="upload-actions">
+              <button class="btn" id="cancel-upload">取消</button>
+              <button class="btn primary" id="confirm-upload">全部加入菜單</button>
+            </div>
+          </div>
+        </div>
+        
         <div id="menu-list" class="list"></div>
         <form id="add-menu-form" class="form-card">
           <div class="form-row">
             <input type="text" id="menu-item-name" placeholder="餐點名稱" required>
             <input type="number" id="menu-item-price" placeholder="價格">
           </div>
-          <button type="submit" class="btn primary full-width">新增餐點</button>
+          <button type="submit" class="btn primary full-width">手動新增餐點</button>
         </form>
       </div>
     </section>
