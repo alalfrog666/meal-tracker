@@ -36,12 +36,12 @@ app.post('/api/meals', (req, res) => {
 // 取得單一場次詳情
 app.get('/api/meals/:id', (req, res) => {
   try {
-    const meal = db.getMealById(req.params.id);
+    const meal = db.getMealById(parseInt(req.params.id));
     if (!meal) {
       return res.status(404).json({ error: '找不到此場次' });
     }
-    const items = db.getItemsByMealId(req.params.id);
-    const payments = db.getPaymentsByMealId(req.params.id);
+    const items = db.getItemsByMealId(parseInt(req.params.id));
+    const payments = db.getPaymentsByMealId(parseInt(req.params.id));
     res.json({ ...meal, items, payments });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -51,7 +51,7 @@ app.get('/api/meals/:id', (req, res) => {
 // 刪除場次
 app.delete('/api/meals/:id', (req, res) => {
   try {
-    db.deleteMeal(req.params.id);
+    db.deleteMeal(parseInt(req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -64,7 +64,7 @@ app.delete('/api/meals/:id', (req, res) => {
 app.post('/api/meals/:id/items', (req, res) => {
   try {
     const { person, item, price } = req.body;
-    const newItem = db.addItem(req.params.id, person, item, price);
+    const newItem = db.addItem(parseInt(req.params.id), person, item, parseFloat(price));
     res.json(newItem);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -74,7 +74,7 @@ app.post('/api/meals/:id/items', (req, res) => {
 // 刪除品項
 app.delete('/api/items/:id', (req, res) => {
   try {
-    db.deleteItem(req.params.id);
+    db.deleteItem(parseInt(req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -87,7 +87,7 @@ app.delete('/api/items/:id', (req, res) => {
 app.post('/api/meals/:id/payments', (req, res) => {
   try {
     const { person, amount } = req.body;
-    const payment = db.addPayment(req.params.id, person, amount);
+    const payment = db.addPayment(parseInt(req.params.id), person, parseFloat(amount));
     res.json(payment);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -97,7 +97,7 @@ app.post('/api/meals/:id/payments', (req, res) => {
 // 刪除墊付記錄
 app.delete('/api/payments/:id', (req, res) => {
   try {
-    db.deletePayment(req.params.id);
+    db.deletePayment(parseInt(req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -119,7 +119,7 @@ app.get('/api/settle', (req, res) => {
 // 標記場次已結算
 app.post('/api/meals/:id/settle', (req, res) => {
   try {
-    db.settleMeal(req.params.id);
+    db.settleMeal(parseInt(req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -152,7 +152,7 @@ app.post('/api/members', (req, res) => {
 // 刪除成員
 app.delete('/api/members/:id', (req, res) => {
   try {
-    db.deleteMember(req.params.id);
+    db.deleteMember(parseInt(req.params.id));
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -169,6 +169,12 @@ app.post('/api/cleanup', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`🦐 團隊訂餐系統運行中: http://localhost:${PORT}`);
+// 啟動伺服器（等待資料庫初始化）
+db.initDb().then(() => {
+  app.listen(PORT, () => {
+    console.log(`🦐 團隊訂餐系統運行中: http://localhost:${PORT}`);
+  });
+}).catch(err => {
+  console.error('資料庫初始化失敗:', err);
+  process.exit(1);
 });

@@ -1,142 +1,192 @@
-const Database = require('better-sqlite3');
+const initSqlJs = require('sql.js');
+const fs = require('fs');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, 'meals.db'));
+const DB_PATH = path.join(__dirname, 'meals.db');
 
-// 初始化資料表
-db.exec(`
-  CREATE TABLE IF NOT EXISTS members (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT UNIQUE NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+let db = null;
 
-  CREATE TABLE IF NOT EXISTS meals (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    restaurant TEXT NOT NULL,
-    date TEXT NOT NULL,
-    settled INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+// 初始化資料庫
+async function initDb() {
+  const SQL = await initSqlJs();
+  
+  // 嘗試讀取現有資料庫
+  try {
+    if (fs.existsSync(DB_PATH)) {
+      const buffer = fs.readFileSync(DB_PATH);
+      db = new SQL.Database(buffer);
+    } else {
+      db = new SQL.Database();
+    }
+  } catch (e) {
+    db = new SQL.Database();
+  }
 
-  CREATE TABLE IF NOT EXISTS items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    meal_id INTEGER NOT NULL,
-    person TEXT NOT NULL,
-    item TEXT NOT NULL,
-    price REAL NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (meal_id) REFERENCES meals(id) ON DELETE CASCADE
-  );
+  // 建立資料表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-  CREATE TABLE IF NOT EXISTS payments (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    meal_id INTEGER NOT NULL,
-    person TEXT NOT NULL,
-    amount REAL NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (meal_id) REFERENCES meals(id) ON DELETE CASCADE
-  );
-`);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS meals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      restaurant TEXT NOT NULL,
+      date TEXT NOT NULL,
+      settled INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
 
-// 啟用外鍵約束
-db.pragma('foreign_keys = ON');
+  db.run(`
+    CREATE TABLE IF NOT EXISTS items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meal_id INTEGER NOT NULL,
+      person TEXT NOT NULL,
+      item TEXT NOT NULL,
+      price REAL NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meal_id INTEGER NOT NULL,
+      person TEXT NOT NULL,
+      amount REAL NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  saveDb();
+  return db;
+}
+
+// 儲存資料庫到檔案
+function saveDb() {
+  if (db) {
+    const data = db.export();
+    const buffer = Buffer.from(data);
+    fs.writeFileSync(DB_PATH, buffer);
+  }
+}
+
+// Helper: 執行查詢並返回所有結果
+function all(sql, params = []) {
+  const stmt = db.prepare(sql);
+  stmt.bind(params);
+  const results = [];
+  while (stmt.step()) {
+    results.push(stmt.getAsObject());
+  }
+  stmt.free();
+  return results;
+}
+
+// Helper: 執行查詢並返回第一個結果
+function get(sql, params = []) {
+  const results = all(sql, params);
+  return results[0] || null;
+}
+
+// Helper: 執行寫入操作
+function run(sql, params = []) {
+  db.run(sql, params);
+  saveDb();
+  return { lastID: db.exec("SELECT last_insert_rowid()")[0]?.values[0][0] };
+}
 
 // ===== 成員相關 =====
 
 function getAllMembers() {
-  return db.prepare('SELECT * FROM members ORDER BY name').all();
+  return all('SELECT * FROM members ORDER BY name');
 }
 
 function addMember(name) {
-  const stmt = db.prepare('INSERT OR IGNORE INTO members (name) VALUES (?)');
-  const result = stmt.run(name);
-  if (result.changes === 0) {
-    return db.prepare('SELECT * FROM members WHERE name = ?').get(name);
-  }
-  return db.prepare('SELECT * FROM members WHERE id = ?').get(result.lastInsertRowid);
+  const existing = get('SELECT * FROM members WHERE name = ?', [name]);
+  if (existing) return existing;
+  
+  run('INSERT INTO members (name) VALUES (?)', [name]);
+  return get('SELECT * FROM members WHERE name = ?', [name]);
 }
 
 function deleteMember(id) {
-  return db.prepare('DELETE FROM members WHERE id = ?').run(id);
+  run('DELETE FROM members WHERE id = ?', [id]);
 }
 
 // ===== 場次相關 =====
 
 function getAllMeals() {
-  const meals = db.prepare(`
+  return all(`
     SELECT m.*, 
-           COUNT(DISTINCT i.id) as item_count,
-           COALESCE(SUM(i.price), 0) as total
+           (SELECT COUNT(*) FROM items WHERE meal_id = m.id) as item_count,
+           (SELECT COALESCE(SUM(price), 0) FROM items WHERE meal_id = m.id) as total
     FROM meals m
-    LEFT JOIN items i ON m.id = i.meal_id
-    GROUP BY m.id
     ORDER BY m.date DESC, m.created_at DESC
-  `).all();
-  return meals;
+  `);
 }
 
 function getMealById(id) {
-  return db.prepare('SELECT * FROM meals WHERE id = ?').get(id);
+  return get('SELECT * FROM meals WHERE id = ?', [id]);
 }
 
 function createMeal(restaurant, date) {
-  const stmt = db.prepare('INSERT INTO meals (restaurant, date) VALUES (?, ?)');
-  const result = stmt.run(restaurant, date);
-  return getMealById(result.lastInsertRowid);
+  const result = run('INSERT INTO meals (restaurant, date) VALUES (?, ?)', [restaurant, date]);
+  return getMealById(result.lastID);
 }
 
 function deleteMeal(id) {
-  return db.prepare('DELETE FROM meals WHERE id = ?').run(id);
+  run('DELETE FROM items WHERE meal_id = ?', [id]);
+  run('DELETE FROM payments WHERE meal_id = ?', [id]);
+  run('DELETE FROM meals WHERE id = ?', [id]);
 }
 
 function settleMeal(id) {
-  return db.prepare('UPDATE meals SET settled = 1 WHERE id = ?').run(id);
+  run('UPDATE meals SET settled = 1 WHERE id = ?', [id]);
 }
 
 // ===== 品項相關 =====
 
 function getItemsByMealId(mealId) {
-  return db.prepare('SELECT * FROM items WHERE meal_id = ? ORDER BY created_at').all(mealId);
+  return all('SELECT * FROM items WHERE meal_id = ? ORDER BY created_at', [mealId]);
 }
 
 function addItem(mealId, person, item, price) {
-  // 自動新增成員
   addMember(person);
-  
-  const stmt = db.prepare('INSERT INTO items (meal_id, person, item, price) VALUES (?, ?, ?, ?)');
-  const result = stmt.run(mealId, person, item, price);
-  return db.prepare('SELECT * FROM items WHERE id = ?').get(result.lastInsertRowid);
+  const result = run('INSERT INTO items (meal_id, person, item, price) VALUES (?, ?, ?, ?)', 
+    [mealId, person, item, price]);
+  return get('SELECT * FROM items WHERE id = ?', [result.lastID]);
 }
 
 function deleteItem(id) {
-  return db.prepare('DELETE FROM items WHERE id = ?').run(id);
+  run('DELETE FROM items WHERE id = ?', [id]);
 }
 
 // ===== 墊付相關 =====
 
 function getPaymentsByMealId(mealId) {
-  return db.prepare('SELECT * FROM payments WHERE meal_id = ? ORDER BY created_at').all(mealId);
+  return all('SELECT * FROM payments WHERE meal_id = ? ORDER BY created_at', [mealId]);
 }
 
 function addPayment(mealId, person, amount) {
-  // 自動新增成員
   addMember(person);
-  
-  const stmt = db.prepare('INSERT INTO payments (meal_id, person, amount) VALUES (?, ?, ?)');
-  const result = stmt.run(mealId, person, amount);
-  return db.prepare('SELECT * FROM payments WHERE id = ?').get(result.lastInsertRowid);
+  const result = run('INSERT INTO payments (meal_id, person, amount) VALUES (?, ?, ?)', 
+    [mealId, person, amount]);
+  return get('SELECT * FROM payments WHERE id = ?', [result.lastID]);
 }
 
 function deletePayment(id) {
-  return db.prepare('DELETE FROM payments WHERE id = ?').run(id);
+  run('DELETE FROM payments WHERE id = ?', [id]);
 }
 
 // ===== 結算計算 =====
 
 function calculateSettlement() {
-  // 取得所有未結算的場次
-  const unsettledMeals = db.prepare('SELECT id FROM meals WHERE settled = 0').all();
+  const unsettledMeals = all('SELECT id FROM meals WHERE settled = 0');
   
   if (unsettledMeals.length === 0) {
     return { transactions: [], summary: {} };
@@ -146,20 +196,20 @@ function calculateSettlement() {
   const placeholders = mealIds.map(() => '?').join(',');
 
   // 計算每個人的消費總額
-  const spending = db.prepare(`
+  const spending = all(`
     SELECT person, SUM(price) as total_spent
     FROM items
     WHERE meal_id IN (${placeholders})
     GROUP BY person
-  `).all(...mealIds);
+  `, mealIds);
 
   // 計算每個人的墊付總額
-  const paying = db.prepare(`
+  const paying = all(`
     SELECT person, SUM(amount) as total_paid
     FROM payments
     WHERE meal_id IN (${placeholders})
     GROUP BY person
-  `).all(...mealIds);
+  `, mealIds);
 
   // 建立餘額表
   const balance = {};
@@ -185,23 +235,20 @@ function calculateSettlement() {
 function calculateTransactions(balance) {
   const transactions = [];
   
-  // 分成債務人和債權人
-  const debtors = []; // 欠錢的人 (balance < 0)
-  const creditors = []; // 被欠錢的人 (balance > 0)
+  const debtors = [];
+  const creditors = [];
   
   Object.entries(balance).forEach(([person, amount]) => {
     if (amount < -0.01) {
-      debtors.push({ person, amount: -amount }); // 轉為正數表示欠多少
+      debtors.push({ person, amount: -amount });
     } else if (amount > 0.01) {
       creditors.push({ person, amount });
     }
   });
 
-  // 排序：金額大的優先處理
   debtors.sort((a, b) => b.amount - a.amount);
   creditors.sort((a, b) => b.amount - a.amount);
 
-  // 配對交易
   let i = 0, j = 0;
   while (i < debtors.length && j < creditors.length) {
     const debtor = debtors[i];
@@ -234,11 +281,16 @@ function cleanupOldData() {
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   const dateStr = sixMonthsAgo.toISOString().split('T')[0];
   
-  const result = db.prepare('DELETE FROM meals WHERE date < ? AND settled = 1').run(dateStr);
-  return result.changes;
+  const oldMeals = all('SELECT id FROM meals WHERE date < ? AND settled = 1', [dateStr]);
+  oldMeals.forEach(meal => {
+    deleteMeal(meal.id);
+  });
+  
+  return oldMeals.length;
 }
 
 module.exports = {
+  initDb,
   getAllMembers,
   addMember,
   deleteMember,
