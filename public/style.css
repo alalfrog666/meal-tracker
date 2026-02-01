@@ -8,11 +8,13 @@
   --primary: #4CAF50;
   --primary-dark: #388E3C;
   --danger: #f44336;
+  --warning: #ff9800;
   --bg: #f5f5f5;
   --card: #ffffff;
   --text: #333333;
   --text-light: #666666;
   --border: #e0e0e0;
+  --shared: #9c27b0;
 }
 
 body {
@@ -45,17 +47,18 @@ header h1 {
 
 nav {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .nav-btn {
-  padding: 8px 16px;
+  padding: 8px 12px;
   border: none;
   background: var(--bg);
   border-radius: 20px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   transition: all 0.2s;
 }
 
@@ -102,6 +105,10 @@ nav {
 .btn.danger {
   background: var(--danger);
   color: white;
+}
+
+.btn.full-width {
+  width: 100%;
 }
 
 .card {
@@ -163,16 +170,30 @@ nav {
   font-size: 1.2rem;
 }
 
-.form-inline {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  background: var(--card);
-  padding: 12px;
-  border-radius: 8px;
+.list-item.shared {
+  border-left: 4px solid var(--shared);
 }
 
-.form-inline input {
+.list-item.shared .title {
+  color: var(--shared);
+}
+
+.form-card {
+  background: var(--card);
+  padding: 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.form-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.form-row input[type="text"],
+.form-row input[type="number"] {
   flex: 1;
   min-width: 80px;
   padding: 10px;
@@ -181,19 +202,51 @@ nav {
   font-size: 1rem;
 }
 
-.form-inline input:focus {
+.form-row input:focus {
   outline: none;
   border-color: var(--primary);
 }
 
-.form-inline .btn {
-  flex-shrink: 0;
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 0;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+}
+
+h2 {
+  margin-bottom: 16px;
 }
 
 h3 {
   margin: 20px 0 12px;
   font-size: 1rem;
   color: var(--text-light);
+}
+
+/* Subtotal card */
+.subtotal {
+  background: #fff8e1;
+  border-left: 4px solid var(--warning);
+}
+
+.subtotal .subtotal-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.subtotal .subtotal-row.total {
+  font-weight: bold;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+  padding-top: 8px;
 }
 
 /* Modal */
@@ -277,6 +330,41 @@ h3 {
   font-size: 1.2rem;
 }
 
+/* Meal summaries */
+.meal-summary-card {
+  background: var(--card);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.meal-summary-card .header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.meal-summary-card .restaurant {
+  font-weight: bold;
+}
+
+.meal-summary-card .date {
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+.meal-summary-card .amounts {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.9rem;
+}
+
+.meal-summary-card .paid-by {
+  font-size: 0.85rem;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
 /* Summary */
 .summary-grid {
   display: grid;
@@ -324,13 +412,22 @@ h3 {
   cursor: pointer;
 }
 
+.hidden {
+  display: none !important;
+}
+
 /* Responsive */
 @media (max-width: 400px) {
-  .form-inline {
+  .form-row {
     flex-direction: column;
   }
   
-  .form-inline input {
+  .form-row input {
     width: 100%;
+  }
+  
+  .nav-btn {
+    padding: 6px 10px;
+    font-size: 0.8rem;
   }
 }

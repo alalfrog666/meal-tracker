@@ -10,7 +10,6 @@ let db = null;
 async function initDb() {
   const SQL = await initSqlJs();
   
-  // 嘗試讀取現有資料庫
   try {
     if (fs.existsSync(DB_PATH)) {
       const buffer = fs.readFileSync(DB_PATH);
@@ -32,6 +31,24 @@ async function initDb() {
   `);
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS restaurants (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS menu_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      restaurant_id INTEGER,
+      name TEXT NOT NULL,
+      price REAL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS meals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       restaurant TEXT NOT NULL,
@@ -48,6 +65,7 @@ async function initDb() {
       person TEXT NOT NULL,
       item TEXT NOT NULL,
       price REAL NOT NULL,
+      shared INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
@@ -62,11 +80,17 @@ async function initDb() {
     )
   `);
 
+  // 確保 shared 欄位存在（升級舊資料庫）
+  try {
+    db.run('ALTER TABLE items ADD COLUMN shared INTEGER DEFAULT 0');
+  } catch (e) {
+    // 欄位已存在，忽略錯誤
+  }
+
   saveDb();
   return db;
 }
 
-// 儲存資料庫到檔案
 function saveDb() {
   if (db) {
     const data = db.export();
@@ -75,7 +99,6 @@ function saveDb() {
   }
 }
 
-// Helper: 執行查詢並返回所有結果
 function all(sql, params = []) {
   const stmt = db.prepare(sql);
   stmt.bind(params);
@@ -87,13 +110,11 @@ function all(sql, params = []) {
   return results;
 }
 
-// Helper: 執行查詢並返回第一個結果
 function get(sql, params = []) {
   const results = all(sql, params);
   return results[0] || null;
 }
 
-// Helper: 執行寫入操作
 function run(sql, params = []) {
   db.run(sql, params);
   saveDb();
@@ -118,6 +139,56 @@ function deleteMember(id) {
   run('DELETE FROM members WHERE id = ?', [id]);
 }
 
+// ===== 餐廳相關 =====
+
+function getAllRestaurants() {
+  return all('SELECT * FROM restaurants ORDER BY name');
+}
+
+function addRestaurant(name) {
+  const existing = get('SELECT * FROM restaurants WHERE name = ?', [name]);
+  if (existing) return existing;
+  
+  run('INSERT INTO restaurants (name) VALUES (?)', [name]);
+  return get('SELECT * FROM restaurants WHERE name = ?', [name]);
+}
+
+function deleteRestaurant(id) {
+  run('DELETE FROM menu_items WHERE restaurant_id = ?', [id]);
+  run('DELETE FROM restaurants WHERE id = ?', [id]);
+}
+
+// ===== 菜單項目相關 =====
+
+function getMenuItemsByRestaurant(restaurantId) {
+  return all('SELECT * FROM menu_items WHERE restaurant_id = ? ORDER BY name', [restaurantId]);
+}
+
+function getAllMenuItems() {
+  return all(`
+    SELECT mi.*, r.name as restaurant_name 
+    FROM menu_items mi 
+    LEFT JOIN restaurants r ON mi.restaurant_id = r.id 
+    ORDER BY r.name, mi.name
+  `);
+}
+
+function addMenuItem(restaurantId, name, price) {
+  const existing = get('SELECT * FROM menu_items WHERE restaurant_id = ? AND name = ?', [restaurantId, name]);
+  if (existing) {
+    // 更新價格
+    run('UPDATE menu_items SET price = ? WHERE id = ?', [price, existing.id]);
+    return get('SELECT * FROM menu_items WHERE id = ?', [existing.id]);
+  }
+  
+  run('INSERT INTO menu_items (restaurant_id, name, price) VALUES (?, ?, ?)', [restaurantId, name, price]);
+  return get('SELECT * FROM menu_items WHERE restaurant_id = ? AND name = ?', [restaurantId, name]);
+}
+
+function deleteMenuItem(id) {
+  run('DELETE FROM menu_items WHERE id = ?', [id]);
+}
+
 // ===== 場次相關 =====
 
 function getAllMeals() {
@@ -135,6 +206,9 @@ function getMealById(id) {
 }
 
 function createMeal(restaurant, date) {
+  // 自動儲存餐廳
+  addRestaurant(restaurant);
+  
   const result = run('INSERT INTO meals (restaurant, date) VALUES (?, ?)', [restaurant, date]);
   return getMealById(result.lastID);
 }
@@ -155,10 +229,23 @@ function getItemsByMealId(mealId) {
   return all('SELECT * FROM items WHERE meal_id = ? ORDER BY created_at', [mealId]);
 }
 
-function addItem(mealId, person, item, price) {
-  addMember(person);
-  const result = run('INSERT INTO items (meal_id, person, item, price) VALUES (?, ?, ?, ?)', 
-    [mealId, person, item, price]);
+function addItem(mealId, person, item, price, shared = false) {
+  // 自動儲存成員
+  if (!shared) {
+    addMember(person);
+  }
+  
+  // 自動儲存菜單項目
+  const meal = getMealById(mealId);
+  if (meal) {
+    const restaurant = get('SELECT * FROM restaurants WHERE name = ?', [meal.restaurant]);
+    if (restaurant) {
+      addMenuItem(restaurant.id, item, price);
+    }
+  }
+  
+  const result = run('INSERT INTO items (meal_id, person, item, price, shared) VALUES (?, ?, ?, ?, ?)', 
+    [mealId, shared ? '共食' : person, item, price, shared ? 1 : 0]);
   return get('SELECT * FROM items WHERE id = ?', [result.lastID]);
 }
 
@@ -189,45 +276,69 @@ function calculateSettlement() {
   const unsettledMeals = all('SELECT id FROM meals WHERE settled = 0');
   
   if (unsettledMeals.length === 0) {
-    return { transactions: [], summary: {} };
+    return { transactions: [], summary: {}, mealSummaries: [] };
   }
 
   const mealIds = unsettledMeals.map(m => m.id);
-  const placeholders = mealIds.map(() => '?').join(',');
+  
+  // 取得每個場次的詳細資訊（用於店家小結）
+  const mealSummaries = mealIds.map(mealId => {
+    const meal = getMealById(mealId);
+    const items = getItemsByMealId(mealId);
+    const payments = getPaymentsByMealId(mealId);
+    
+    const totalSpent = items.reduce((sum, i) => sum + i.price, 0);
+    const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+    
+    return {
+      id: mealId,
+      restaurant: meal.restaurant,
+      date: meal.date,
+      totalSpent,
+      totalPaid,
+      payments: payments.map(p => ({ person: p.person, amount: p.amount }))
+    };
+  });
 
-  // 計算每個人的消費總額
-  const spending = all(`
-    SELECT person, SUM(price) as total_spent
-    FROM items
-    WHERE meal_id IN (${placeholders})
-    GROUP BY person
-  `, mealIds);
-
-  // 計算每個人的墊付總額
-  const paying = all(`
-    SELECT person, SUM(amount) as total_paid
-    FROM payments
-    WHERE meal_id IN (${placeholders})
-    GROUP BY person
-  `, mealIds);
-
-  // 建立餘額表
+  // 計算每個人的消費（考慮共食分攤）
   const balance = {};
   
-  spending.forEach(s => {
-    balance[s.person] = (balance[s.person] || 0) - s.total_spent;
-  });
-  
-  paying.forEach(p => {
-    balance[p.person] = (balance[p.person] || 0) + p.total_paid;
+  mealIds.forEach(mealId => {
+    const items = getItemsByMealId(mealId);
+    const payments = getPaymentsByMealId(mealId);
+    
+    // 找出這個場次的所有參與者（有點餐的人）
+    const participants = [...new Set(items.filter(i => !i.shared).map(i => i.person))];
+    const participantCount = participants.length || 1;
+    
+    // 計算共食費用
+    const sharedTotal = items.filter(i => i.shared).reduce((sum, i) => sum + i.price, 0);
+    const sharedPerPerson = sharedTotal / participantCount;
+    
+    // 個人消費 + 共食分攤
+    items.forEach(item => {
+      if (!item.shared) {
+        balance[item.person] = (balance[item.person] || 0) - item.price;
+      }
+    });
+    
+    // 每個參與者分攤共食費用
+    participants.forEach(person => {
+      balance[person] = (balance[person] || 0) - sharedPerPerson;
+    });
+    
+    // 墊付
+    payments.forEach(p => {
+      balance[p.person] = (balance[p.person] || 0) + p.amount;
+    });
   });
 
-  // 計算交易
   const transactions = calculateTransactions(balance);
 
   return {
     transactions,
     summary: balance,
+    mealSummaries,
     unsettledMeals: unsettledMeals.length
   };
 }
@@ -294,6 +405,13 @@ module.exports = {
   getAllMembers,
   addMember,
   deleteMember,
+  getAllRestaurants,
+  addRestaurant,
+  deleteRestaurant,
+  getMenuItemsByRestaurant,
+  getAllMenuItems,
+  addMenuItem,
+  deleteMenuItem,
   getAllMeals,
   getMealById,
   createMeal,

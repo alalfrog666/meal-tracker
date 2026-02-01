@@ -14,6 +14,7 @@
         <button class="nav-btn active" data-view="meals">訂餐記錄</button>
         <button class="nav-btn" data-view="settle">結算</button>
         <button class="nav-btn" data-view="members">成員</button>
+        <button class="nav-btn" data-view="restaurants">店家</button>
       </nav>
     </header>
 
@@ -29,33 +30,47 @@
     <section id="meal-detail-view" class="view">
       <div class="action-bar">
         <button id="back-btn" class="btn">← 返回</button>
-        <button id="delete-meal-btn" class="btn danger">🗑️ 刪除場次</button>
+        <button id="delete-meal-btn" class="btn danger">🗑️ 刪除</button>
       </div>
       <div id="meal-info" class="card"></div>
       
       <h3>📝 品項明細</h3>
       <div id="items-list" class="list"></div>
-      <form id="add-item-form" class="form-inline">
-        <input type="text" id="item-person" placeholder="誰" list="members-datalist" required>
-        <input type="text" id="item-name" placeholder="品項" required>
-        <input type="number" id="item-price" placeholder="金額" required>
-        <button type="submit" class="btn primary">新增</button>
+      <form id="add-item-form" class="form-card">
+        <div class="form-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="item-shared">
+            <span>🍲 共食（大家分攤）</span>
+          </label>
+        </div>
+        <div class="form-row">
+          <input type="text" id="item-person" placeholder="誰" list="members-datalist" required>
+          <input type="text" id="item-name" placeholder="品項" list="menu-datalist" required>
+          <input type="number" id="item-price" placeholder="金額" required>
+        </div>
+        <button type="submit" class="btn primary full-width">新增品項</button>
       </form>
 
       <h3>💰 墊付記錄</h3>
+      <div id="meal-subtotal" class="card subtotal"></div>
       <div id="payments-list" class="list"></div>
-      <form id="add-payment-form" class="form-inline">
-        <input type="text" id="payment-person" placeholder="墊付人" list="members-datalist" required>
-        <input type="number" id="payment-amount" placeholder="金額" required>
-        <button type="submit" class="btn primary">新增</button>
+      <form id="add-payment-form" class="form-card">
+        <div class="form-row">
+          <input type="text" id="payment-person" placeholder="墊付人" list="members-datalist" required>
+          <input type="number" id="payment-amount" placeholder="金額" required>
+        </div>
+        <button type="submit" class="btn primary full-width">新增墊付</button>
       </form>
       
       <datalist id="members-datalist"></datalist>
+      <datalist id="menu-datalist"></datalist>
+      <datalist id="restaurants-datalist"></datalist>
     </section>
 
     <!-- 結算頁面 -->
     <section id="settle-view" class="view">
       <h2>💸 結算</h2>
+      <div id="meal-summaries"></div>
       <div id="settle-summary" class="card"></div>
       <h3>需要轉帳</h3>
       <div id="settle-transactions" class="list"></div>
@@ -68,10 +83,36 @@
     <section id="members-view" class="view">
       <h2>👥 團隊成員</h2>
       <div id="members-list" class="list"></div>
-      <form id="add-member-form" class="form-inline">
-        <input type="text" id="member-name" placeholder="成員名稱" required>
-        <button type="submit" class="btn primary">新增</button>
+      <form id="add-member-form" class="form-card">
+        <div class="form-row">
+          <input type="text" id="member-name" placeholder="成員名稱" required>
+        </div>
+        <button type="submit" class="btn primary full-width">新增成員</button>
       </form>
+    </section>
+
+    <!-- 店家管理頁面 -->
+    <section id="restaurants-view" class="view">
+      <h2>🏪 常用店家</h2>
+      <div id="restaurants-list" class="list"></div>
+      <form id="add-restaurant-form" class="form-card">
+        <div class="form-row">
+          <input type="text" id="restaurant-name" placeholder="店家名稱" required>
+        </div>
+        <button type="submit" class="btn primary full-width">新增店家</button>
+      </form>
+      
+      <div id="menu-section" class="hidden">
+        <h3 id="menu-title">📋 菜單</h3>
+        <div id="menu-list" class="list"></div>
+        <form id="add-menu-form" class="form-card">
+          <div class="form-row">
+            <input type="text" id="menu-item-name" placeholder="餐點名稱" required>
+            <input type="number" id="menu-item-price" placeholder="價格">
+          </div>
+          <button type="submit" class="btn primary full-width">新增餐點</button>
+        </form>
+      </div>
     </section>
 
     <!-- 新增訂餐彈窗 -->
@@ -81,7 +122,7 @@
         <form id="new-meal-form">
           <label>
             餐廳名稱
-            <input type="text" id="meal-restaurant" placeholder="例：麥當勞" required>
+            <input type="text" id="meal-restaurant" placeholder="例：麥當勞" list="restaurants-datalist" required>
           </label>
           <label>
             日期

@@ -10,9 +10,77 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ===== 餐廳 API =====
+
+app.get('/api/restaurants', (req, res) => {
+  try {
+    const restaurants = db.getAllRestaurants();
+    res.json(restaurants);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/restaurants', (req, res) => {
+  try {
+    const { name } = req.body;
+    const restaurant = db.addRestaurant(name);
+    res.json(restaurant);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/restaurants/:id', (req, res) => {
+  try {
+    db.deleteRestaurant(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ===== 菜單項目 API =====
+
+app.get('/api/restaurants/:id/menu', (req, res) => {
+  try {
+    const items = db.getMenuItemsByRestaurant(parseInt(req.params.id));
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/menu', (req, res) => {
+  try {
+    const items = db.getAllMenuItems();
+    res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/restaurants/:id/menu', (req, res) => {
+  try {
+    const { name, price } = req.body;
+    const item = db.addMenuItem(parseInt(req.params.id), name, parseFloat(price) || 0);
+    res.json(item);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/menu/:id', (req, res) => {
+  try {
+    db.deleteMenuItem(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ===== 訂餐場次 API =====
 
-// 取得所有場次
 app.get('/api/meals', (req, res) => {
   try {
     const meals = db.getAllMeals();
@@ -22,7 +90,6 @@ app.get('/api/meals', (req, res) => {
   }
 });
 
-// 新增場次
 app.post('/api/meals', (req, res) => {
   try {
     const { restaurant, date } = req.body;
@@ -33,7 +100,6 @@ app.post('/api/meals', (req, res) => {
   }
 });
 
-// 取得單一場次詳情
 app.get('/api/meals/:id', (req, res) => {
   try {
     const meal = db.getMealById(parseInt(req.params.id));
@@ -48,7 +114,6 @@ app.get('/api/meals/:id', (req, res) => {
   }
 });
 
-// 刪除場次
 app.delete('/api/meals/:id', (req, res) => {
   try {
     db.deleteMeal(parseInt(req.params.id));
@@ -60,18 +125,22 @@ app.delete('/api/meals/:id', (req, res) => {
 
 // ===== 品項 API =====
 
-// 新增品項
 app.post('/api/meals/:id/items', (req, res) => {
   try {
-    const { person, item, price } = req.body;
-    const newItem = db.addItem(parseInt(req.params.id), person, item, parseFloat(price));
+    const { person, item, price, shared } = req.body;
+    const newItem = db.addItem(
+      parseInt(req.params.id), 
+      person || '共食', 
+      item, 
+      parseFloat(price),
+      shared === true || shared === 'true' || shared === 1
+    );
     res.json(newItem);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 刪除品項
 app.delete('/api/items/:id', (req, res) => {
   try {
     db.deleteItem(parseInt(req.params.id));
@@ -83,7 +152,6 @@ app.delete('/api/items/:id', (req, res) => {
 
 // ===== 墊付 API =====
 
-// 新增墊付記錄
 app.post('/api/meals/:id/payments', (req, res) => {
   try {
     const { person, amount } = req.body;
@@ -94,7 +162,6 @@ app.post('/api/meals/:id/payments', (req, res) => {
   }
 });
 
-// 刪除墊付記錄
 app.delete('/api/payments/:id', (req, res) => {
   try {
     db.deletePayment(parseInt(req.params.id));
@@ -106,7 +173,6 @@ app.delete('/api/payments/:id', (req, res) => {
 
 // ===== 結算 API =====
 
-// 計算結算結果
 app.get('/api/settle', (req, res) => {
   try {
     const result = db.calculateSettlement();
@@ -116,7 +182,6 @@ app.get('/api/settle', (req, res) => {
   }
 });
 
-// 標記場次已結算
 app.post('/api/meals/:id/settle', (req, res) => {
   try {
     db.settleMeal(parseInt(req.params.id));
@@ -128,7 +193,6 @@ app.post('/api/meals/:id/settle', (req, res) => {
 
 // ===== 團隊成員 API =====
 
-// 取得所有成員
 app.get('/api/members', (req, res) => {
   try {
     const members = db.getAllMembers();
@@ -138,7 +202,6 @@ app.get('/api/members', (req, res) => {
   }
 });
 
-// 新增成員
 app.post('/api/members', (req, res) => {
   try {
     const { name } = req.body;
@@ -149,7 +212,6 @@ app.post('/api/members', (req, res) => {
   }
 });
 
-// 刪除成員
 app.delete('/api/members/:id', (req, res) => {
   try {
     db.deleteMember(parseInt(req.params.id));
@@ -159,7 +221,6 @@ app.delete('/api/members/:id', (req, res) => {
   }
 });
 
-// 清理超過六個月的資料
 app.post('/api/cleanup', (req, res) => {
   try {
     const deleted = db.cleanupOldData();
@@ -169,7 +230,6 @@ app.post('/api/cleanup', (req, res) => {
   }
 });
 
-// 啟動伺服器（等待資料庫初始化）
 db.initDb().then(() => {
   app.listen(PORT, () => {
     console.log(`🦐 團隊訂餐系統運行中: http://localhost:${PORT}`);

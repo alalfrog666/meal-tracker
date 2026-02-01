@@ -2,14 +2,18 @@ const API = '';
 
 // State
 let currentMealId = null;
+let currentRestaurantId = null;
 let members = [];
+let restaurants = [];
+let menuItems = [];
 
 // DOM Elements
 const views = {
   meals: document.getElementById('meals-view'),
   mealDetail: document.getElementById('meal-detail-view'),
   settle: document.getElementById('settle-view'),
-  members: document.getElementById('members-view')
+  members: document.getElementById('members-view'),
+  restaurants: document.getElementById('restaurants-view')
 };
 
 // Navigation
@@ -35,15 +39,32 @@ function showView(viewName) {
   } else if (viewName === 'members') {
     views.members.classList.add('active');
     loadMembers();
+  } else if (viewName === 'restaurants') {
+    views.restaurants.classList.add('active');
+    loadRestaurants();
   }
 }
 
-// Load members for datalist
-async function loadMembersDatalist() {
-  const res = await fetch(`${API}/api/members`);
-  members = await res.json();
-  const datalist = document.getElementById('members-datalist');
-  datalist.innerHTML = members.map(m => `<option value="${m.name}">`).join('');
+// Load data for datalists
+async function loadDataLists() {
+  const [membersRes, restaurantsRes, menuRes] = await Promise.all([
+    fetch(`${API}/api/members`),
+    fetch(`${API}/api/restaurants`),
+    fetch(`${API}/api/menu`)
+  ]);
+  
+  members = await membersRes.json();
+  restaurants = await restaurantsRes.json();
+  menuItems = await menuRes.json();
+  
+  document.getElementById('members-datalist').innerHTML = 
+    members.map(m => `<option value="${m.name}">`).join('');
+  
+  document.getElementById('restaurants-datalist').innerHTML = 
+    restaurants.map(r => `<option value="${r.name}">`).join('');
+  
+  document.getElementById('menu-datalist').innerHTML = 
+    menuItems.map(m => `<option value="${m.name}">${m.restaurant_name ? `(${m.restaurant_name}) ` : ''}$${m.price || 0}</option>`).join('');
 }
 
 // ===== Meals =====
@@ -80,22 +101,34 @@ async function openMeal(id) {
   await loadMealDetail();
   views.meals.classList.remove('active');
   views.mealDetail.classList.add('active');
-  loadMembersDatalist();
+  loadDataLists();
 }
 
 async function loadMealDetail() {
   const res = await fetch(`${API}/api/meals/${currentMealId}`);
   const meal = await res.json();
   
-  const total = meal.items.reduce((sum, i) => sum + i.price, 0);
+  const personalItems = meal.items.filter(i => !i.shared);
+  const sharedItems = meal.items.filter(i => i.shared);
+  
+  const totalPersonal = personalItems.reduce((sum, i) => sum + i.price, 0);
+  const totalShared = sharedItems.reduce((sum, i) => sum + i.price, 0);
+  const total = totalPersonal + totalShared;
   const totalPaid = meal.payments.reduce((sum, p) => sum + p.amount, 0);
   
   document.getElementById('meal-info').innerHTML = `
     <div class="title" style="font-size:1.3rem;margin-bottom:8px;">📍 ${meal.restaurant}</div>
     <div class="subtitle">日期：${meal.date}</div>
-    <div style="margin-top:12px;display:flex;justify-content:space-between;">
-      <span>總金額：<strong>$${total}</strong></span>
-      <span>已墊付：<strong>$${totalPaid}</strong></span>
+    <div style="margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;">
+        <span>個人消費：</span><strong>$${totalPersonal}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;">
+        <span>🍲 共食：</span><strong>$${totalShared}</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;border-top:1px solid #eee;margin-top:8px;padding-top:8px;">
+        <span>總金額：</span><strong>$${total}</strong>
+      </div>
     </div>
   `;
   
@@ -105,9 +138,9 @@ async function loadMealDetail() {
     itemsList.innerHTML = '<div class="empty">還沒有品項</div>';
   } else {
     itemsList.innerHTML = meal.items.map(item => `
-      <div class="list-item">
+      <div class="list-item ${item.shared ? 'shared' : ''}">
         <div class="info">
-          <div class="title">${item.person}</div>
+          <div class="title">${item.shared ? '🍲 共食' : item.person}</div>
           <div class="subtitle">${item.item}</div>
         </div>
         <div class="amount">$${item.price}</div>
@@ -115,6 +148,23 @@ async function loadMealDetail() {
       </div>
     `).join('');
   }
+  
+  // Subtotal for payments
+  const subtotalEl = document.getElementById('meal-subtotal');
+  subtotalEl.innerHTML = `
+    <div class="subtotal-row">
+      <span>📊 本店總支出</span>
+      <strong>$${total}</strong>
+    </div>
+    <div class="subtotal-row">
+      <span>已墊付</span>
+      <span>$${totalPaid}</span>
+    </div>
+    <div class="subtotal-row ${total - totalPaid !== 0 ? 'total' : ''}">
+      <span>${total > totalPaid ? '待墊付' : '多付'}</span>
+      <strong style="color:${total > totalPaid ? 'var(--danger)' : 'var(--primary)'}">$${Math.abs(total - totalPaid)}</strong>
+    </div>
+  `;
   
   // Payments
   const paymentsList = document.getElementById('payments-list');
@@ -131,7 +181,33 @@ async function loadMealDetail() {
       </div>
     `).join('');
   }
+  
+  // Auto-fill payment amount
+  const remaining = total - totalPaid;
+  if (remaining > 0) {
+    document.getElementById('payment-amount').value = remaining;
+  }
 }
+
+// Shared checkbox toggles person field
+document.getElementById('item-shared').addEventListener('change', (e) => {
+  const personInput = document.getElementById('item-person');
+  if (e.target.checked) {
+    personInput.value = '共食';
+    personInput.disabled = true;
+  } else {
+    personInput.value = '';
+    personInput.disabled = false;
+  }
+});
+
+// Auto-fill price when selecting menu item
+document.getElementById('item-name').addEventListener('change', (e) => {
+  const selectedItem = menuItems.find(m => m.name === e.target.value);
+  if (selectedItem && selectedItem.price) {
+    document.getElementById('item-price').value = selectedItem.price;
+  }
+});
 
 // Back button
 document.getElementById('back-btn').addEventListener('click', () => {
@@ -152,6 +228,7 @@ document.getElementById('delete-meal-btn').addEventListener('click', async () =>
 // Add item
 document.getElementById('add-item-form').addEventListener('submit', async (e) => {
   e.preventDefault();
+  const shared = document.getElementById('item-shared').checked;
   const person = document.getElementById('item-person').value.trim();
   const item = document.getElementById('item-name').value.trim();
   const price = parseFloat(document.getElementById('item-price').value);
@@ -159,17 +236,18 @@ document.getElementById('add-item-form').addEventListener('submit', async (e) =>
   await fetch(`${API}/api/meals/${currentMealId}/items`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ person, item, price })
+    body: JSON.stringify({ person, item, price, shared })
   });
   
+  document.getElementById('item-shared').checked = false;
+  document.getElementById('item-person').disabled = false;
   document.getElementById('item-person').value = '';
   document.getElementById('item-name').value = '';
   document.getElementById('item-price').value = '';
   loadMealDetail();
-  loadMembersDatalist();
+  loadDataLists();
 });
 
-// Delete item
 async function deleteItem(id) {
   await fetch(`${API}/api/items/${id}`, { method: 'DELETE' });
   loadMealDetail();
@@ -190,10 +268,9 @@ document.getElementById('add-payment-form').addEventListener('submit', async (e)
   document.getElementById('payment-person').value = '';
   document.getElementById('payment-amount').value = '';
   loadMealDetail();
-  loadMembersDatalist();
+  loadDataLists();
 });
 
-// Delete payment
 async function deletePayment(id) {
   await fetch(`${API}/api/payments/${id}`, { method: 'DELETE' });
   loadMealDetail();
@@ -207,6 +284,7 @@ const mealDateInput = document.getElementById('meal-date');
 document.getElementById('new-meal-btn').addEventListener('click', () => {
   mealDateInput.value = new Date().toISOString().split('T')[0];
   modal.classList.remove('hidden');
+  loadDataLists();
 });
 
 document.getElementById('modal-cancel').addEventListener('click', () => {
@@ -236,9 +314,36 @@ async function loadSettlement() {
   const res = await fetch(`${API}/api/settle`);
   const data = await res.json();
   
+  // Meal summaries (店家小結)
+  const summariesEl = document.getElementById('meal-summaries');
+  if (data.mealSummaries && data.mealSummaries.length > 0) {
+    summariesEl.innerHTML = `
+      <h3>📋 各店家支出</h3>
+      ${data.mealSummaries.map(m => `
+        <div class="meal-summary-card">
+          <div class="header">
+            <span class="restaurant">${m.restaurant}</span>
+            <span class="date">${m.date}</span>
+          </div>
+          <div class="amounts">
+            <span>支出: $${m.totalSpent}</span>
+            <span>已墊付: $${m.totalPaid}</span>
+          </div>
+          ${m.payments.length > 0 ? `
+            <div class="paid-by">
+              墊付: ${m.payments.map(p => `${p.person} $${p.amount}`).join(', ')}
+            </div>
+          ` : '<div class="paid-by" style="color:var(--danger)">⚠️ 尚未填寫墊付人</div>'}
+        </div>
+      `).join('')}
+    `;
+  } else {
+    summariesEl.innerHTML = '';
+  }
+  
   // Summary
   const summaryEl = document.getElementById('settle-summary');
-  const entries = Object.entries(data.summary);
+  const entries = Object.entries(data.summary || {});
   
   if (entries.length === 0) {
     summaryEl.innerHTML = '<div class="empty">沒有需要結算的記錄</div>';
@@ -262,7 +367,7 @@ async function loadSettlement() {
   
   // Transactions
   const transEl = document.getElementById('settle-transactions');
-  if (data.transactions.length === 0) {
+  if (!data.transactions || data.transactions.length === 0) {
     transEl.innerHTML = '<div class="empty">✅ 不需要轉帳，大家已經結清！</div>';
   } else {
     transEl.innerHTML = data.transactions.map(t => `
@@ -333,6 +438,95 @@ async function deleteMember(id) {
   loadMembers();
 }
 
+// ===== Restaurants =====
+
+async function loadRestaurants() {
+  const res = await fetch(`${API}/api/restaurants`);
+  restaurants = await res.json();
+  
+  const list = document.getElementById('restaurants-list');
+  if (restaurants.length === 0) {
+    list.innerHTML = '<div class="empty">還沒有店家<br>新增訂餐時會自動建立</div>';
+    document.getElementById('menu-section').classList.add('hidden');
+    return;
+  }
+  
+  list.innerHTML = restaurants.map(r => `
+    <div class="list-item clickable" onclick="selectRestaurant(${r.id}, '${r.name}')">
+      <div class="info">
+        <div class="title">${r.name}</div>
+      </div>
+      <button class="delete-btn" onclick="event.stopPropagation(); deleteRestaurant(${r.id})">×</button>
+    </div>
+  `).join('');
+}
+
+async function selectRestaurant(id, name) {
+  currentRestaurantId = id;
+  document.getElementById('menu-title').textContent = `📋 ${name} 菜單`;
+  document.getElementById('menu-section').classList.remove('hidden');
+  
+  const res = await fetch(`${API}/api/restaurants/${id}/menu`);
+  const items = await res.json();
+  
+  const list = document.getElementById('menu-list');
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty">還沒有餐點</div>';
+  } else {
+    list.innerHTML = items.map(item => `
+      <div class="list-item">
+        <div class="info">
+          <div class="title">${item.name}</div>
+        </div>
+        <div class="amount">${item.price ? `$${item.price}` : '-'}</div>
+        <button class="delete-btn" onclick="deleteMenuItem(${item.id})">×</button>
+      </div>
+    `).join('');
+  }
+}
+
+document.getElementById('add-restaurant-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('restaurant-name').value.trim();
+  
+  await fetch(`${API}/api/restaurants`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  });
+  
+  document.getElementById('restaurant-name').value = '';
+  loadRestaurants();
+});
+
+async function deleteRestaurant(id) {
+  if (!confirm('確定要刪除這個店家嗎？（菜單也會一起刪除）')) return;
+  await fetch(`${API}/api/restaurants/${id}`, { method: 'DELETE' });
+  document.getElementById('menu-section').classList.add('hidden');
+  loadRestaurants();
+}
+
+document.getElementById('add-menu-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = document.getElementById('menu-item-name').value.trim();
+  const price = parseFloat(document.getElementById('menu-item-price').value) || 0;
+  
+  await fetch(`${API}/api/restaurants/${currentRestaurantId}/menu`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, price })
+  });
+  
+  document.getElementById('menu-item-name').value = '';
+  document.getElementById('menu-item-price').value = '';
+  selectRestaurant(currentRestaurantId, document.getElementById('menu-title').textContent.replace('📋 ', '').replace(' 菜單', ''));
+});
+
+async function deleteMenuItem(id) {
+  await fetch(`${API}/api/menu/${id}`, { method: 'DELETE' });
+  selectRestaurant(currentRestaurantId, document.getElementById('menu-title').textContent.replace('📋 ', '').replace(' 菜單', ''));
+}
+
 // Initial load
 loadMeals();
-loadMembersDatalist();
+loadDataLists();
