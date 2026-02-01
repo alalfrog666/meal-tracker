@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🍱 團隊訂餐分帳</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🍱 團隊訂餐</h1>
+      <nav>
+        <button class="nav-btn active" data-view="meals">訂餐記錄</button>
+        <button class="nav-btn" data-view="settle">結算</button>
+        <button class="nav-btn" data-view="members">成員</button>
+      </nav>
+    </header>
+
+    <!-- 訂餐記錄頁面 -->
+    <section id="meals-view" class="view active">
+      <div class="action-bar">
+        <button id="new-meal-btn" class="btn primary">➕ 新增訂餐</button>
+      </div>
+      <div id="meals-list" class="list"></div>
+    </section>
+
+    <!-- 單一場次詳情 -->
+    <section id="meal-detail-view" class="view">
+      <div class="action-bar">
+        <button id="back-btn" class="btn">← 返回</button>
+        <button id="delete-meal-btn" class="btn danger">🗑️ 刪除場次</button>
+      </div>
+      <div id="meal-info" class="card"></div>
+      
+      <h3>📝 品項明細</h3>
+      <div id="items-list" class="list"></div>
+      <form id="add-item-form" class="form-inline">
+        <input type="text" id="item-person" placeholder="誰" list="members-datalist" required>
+        <input type="text" id="item-name" placeholder="品項" required>
+        <input type="number" id="item-price" placeholder="金額" required>
+        <button type="submit" class="btn primary">新增</button>
+      </form>
+
+      <h3>💰 墊付記錄</h3>
+      <div id="payments-list" class="list"></div>
+      <form id="add-payment-form" class="form-inline">
+        <input type="text" id="payment-person" placeholder="墊付人" list="members-datalist" required>
+        <input type="number" id="payment-amount" placeholder="金額" required>
+        <button type="submit" class="btn primary">新增</button>
+      </form>
+      
+      <datalist id="members-datalist"></datalist>
+    </section>
+
+    <!-- 結算頁面 -->
+    <section id="settle-view" class="view">
+      <h2>💸 結算</h2>
+      <div id="settle-summary" class="card"></div>
+      <h3>需要轉帳</h3>
+      <div id="settle-transactions" class="list"></div>
+      <div class="action-bar">
+        <button id="settle-all-btn" class="btn primary">✅ 全部標記已結算</button>
+      </div>
+    </section>
+
+    <!-- 成員頁面 -->
+    <section id="members-view" class="view">
+      <h2>👥 團隊成員</h2>
+      <div id="members-list" class="list"></div>
+      <form id="add-member-form" class="form-inline">
+        <input type="text" id="member-name" placeholder="成員名稱" required>
+        <button type="submit" class="btn primary">新增</button>
+      </form>
+    </section>
+
+    <!-- 新增訂餐彈窗 -->
+    <div id="modal" class="modal hidden">
+      <div class="modal-content">
+        <h3>新增訂餐</h3>
+        <form id="new-meal-form">
+          <label>
+            餐廳名稱
+            <input type="text" id="meal-restaurant" placeholder="例：麥當勞" required>
+          </label>
+          <label>
+            日期
+            <input type="date" id="meal-date" required>
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn" id="modal-cancel">取消</button>
+            <button type="submit" class="btn primary">建立</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
